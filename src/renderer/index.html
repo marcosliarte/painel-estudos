@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+<title>Painel de Estudos</title>
+<link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div class="wrap" style="padding-top:38px;">
+    <div style="display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+      <h1>Painel de Estudos</h1>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button class="backupbtn" id="btnExport" title="Salvar uma cópia de segurança dos seus dados">⭳ Backup</button>
+        <button class="backupbtn" id="btnImport" title="Restaurar dados de um backup">⭱ Restaurar</button>
+      </div>
+    </div>
+    <div class="tabs">
+      <button class="tab on" id="tabEstudos" data-tab="estudos">
+        <span class="tl"><span class="tlabel">Estudos</span></span>
+        <span class="thint">horas &amp; questões</span>
+      </button>
+      <button class="tab" id="tabErros" data-tab="erros">
+        <span class="tl"><span class="tlabel">Erros</span><span class="badge hide" id="badgeErros">0</span></span>
+        <span class="thint">o que revisar</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ABA ESTUDOS -->
+  <div id="viewEstudos">
+    <div class="wrap" style="padding-top:22px;">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <div class="serif" id="streakNum" style="font-size:42px; font-weight:700; color:var(--ink-soft); line-height:1;">0</div>
+        <div class="muted" style="font-size:14px; line-height:1.35;">
+          <span id="streakLabel">dias seguidos</span><br />
+          <span style="font-size:12px;">estudando. o hábito é a vitória.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrap" style="padding-top:18px;">
+      <div class="panel" style="padding:18px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:14px;">
+          <div class="serif" style="font-size:17px; font-weight:700;">Cronômetro de estudo</div>
+          <div style="display:flex; gap:6px;">
+            <button class="ghost" id="timerMode_stopwatch" data-mode="stopwatch">Cronômetro</button>
+            <button class="ghost" id="timerMode_countdown" data-mode="countdown">Regressivo</button>
+            <button class="ghost" id="timerMode_pomodoro" data-mode="pomodoro">Pomodoro</button>
+          </div>
+        </div>
+
+        <div style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; margin-bottom:6px;">
+          <div style="flex:1; min-width:180px;">
+            <label class="lbl">Matéria</label>
+            <select class="inp" id="timerSubject"></select>
+          </div>
+          <div id="timerConfigCountdown" class="hide">
+            <label class="lbl">Duração (min)</label>
+            <input class="num" id="timerCountdownMin" type="number" min="1" max="300" value="25" style="width:80px;" />
+          </div>
+          <div id="timerConfigPomodoro" class="hide" style="display:flex; gap:10px;">
+            <div>
+              <label class="lbl">Foco (min)</label>
+              <input class="num" id="timerPomodoroFoco" type="number" min="1" max="120" value="25" style="width:70px;" />
+            </div>
+            <div>
+              <label class="lbl">Pausa (min)</label>
+              <input class="num" id="timerPomodoroPausa" type="number" min="1" max="60" value="5" style="width:70px;" />
+            </div>
+          </div>
+        </div>
+
+        <div style="text-align:center; padding:14px 0 6px;">
+          <span id="timerPhaseBadge" class="hide" style="display:inline-block; color:#fff; font-size:11.5px; font-weight:700; padding:3px 10px; border-radius:12px; margin-bottom:8px; text-transform:uppercase; letter-spacing:.5px;"></span>
+          <div class="serif" id="timerDisplay" style="font-size:48px; font-weight:700; font-variant-numeric:tabular-nums; line-height:1;">00:00</div>
+          <div class="muted" id="timerSub" style="font-size:12.5px; margin-top:6px;">escolha uma matéria para começar</div>
+        </div>
+
+        <div style="display:flex; gap:10px; justify-content:center; margin-top:14px;">
+          <button class="primary" id="timerStart" style="width:auto; padding:10px 24px;">▶ Iniciar</button>
+          <button class="primary hide" id="timerPause" style="width:auto; padding:10px 24px; background:var(--clay);">⏸ Pausar</button>
+          <button class="ghost hide" id="timerFinish" style="padding:10px 20px;">✓ Finalizar</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrap" style="padding-top:18px;">
+      <div class="metric-grid">
+        <div class="metric"><div class="mv" id="mTotal" style="color:var(--ink);">0min</div><div class="ml">Total de horas</div></div>
+        <div class="metric"><div class="mv" id="mAvg" style="color:var(--olive);">0min</div><div class="ml">Média por dia</div><div class="msub">nos dias ativos</div></div>
+        <div class="metric"><div class="mv" id="mDays" style="color:var(--gold);">0</div><div class="ml">Dias estudados</div></div>
+        <div class="metric"><div class="mv" id="mQ" style="color:var(--clay);">0</div><div class="ml">Questões feitas</div></div>
+      </div>
+    </div>
+
+    <div class="wrap" style="padding-top:24px;">
+      <div class="panel" style="padding:18px 18px 8px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;">
+          <button class="datebtn" id="prevDay">‹</button>
+          <div style="text-align:center;">
+            <div class="serif" id="dayTitle" style="font-size:18px; font-weight:700;">Hoje</div>
+            <div class="muted" id="daySub" style="font-size:12px; margin-top:2px;">0min · 0 questões</div>
+            <button id="clearDay" style="margin-top:4px; font-size:11px; color:var(--ink-soft); border:none; background:none; cursor:pointer; text-decoration:underline; padding:2px 4px;" title="Zerar todos os minutos e questões deste dia">zerar dia</button>
+          </div>
+          <button class="datebtn" id="nextDay">›</button>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr auto auto; gap:12px; padding:0 4px 8px; font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.6px; border-bottom:1px solid var(--line);">
+          <span>Matéria</span>
+          <span style="width:148px; text-align:center;">Tempo</span>
+          <span style="width:148px; text-align:center;">Questões</span>
+        </div>
+        <div id="subjRows"></div>
+        <div class="muted" style="font-size:11.5px; padding:10px 4px 4px;">Tempo em passos de 15 min (✎ pra digitar um valor exato) · questões em passos de 5 (ou digite direto).</div>
+      </div>
+
+      <div style="display:flex; gap:8px; margin-top:14px;">
+        <input class="addinput" id="newSubjEstudos" placeholder="Adicionar matéria (ex.: Raciocínio Lógico, Direito Const.)" />
+        <button class="addbtn" id="addSubjEstudos">Adicionar</button>
+      </div>
+      <div class="muted" style="font-size:12px; margin-top:8px; line-height:1.5;">
+        As matérias valem também para a aba Erros. Ao mudar de edital, remova as antigas (✕) e adicione as novas — o histórico continua salvo.
+      </div>
+    </div>
+
+    <div class="wrap" style="padding-top:28px;">
+      <div class="serif" style="font-size:18px; font-weight:700; margin-bottom:4px;">Últimos dias</div>
+      <div class="muted" style="font-size:12.5px; margin-bottom:14px;">Cada barra é um dia. O que importa não é a altura — é não deixar buracos.</div>
+      <div id="historyChart" style="display:flex; flex-direction:column; gap:7px;"></div>
+    </div>
+  </div>
+
+  <!-- ABA ERROS -->
+  <div id="viewErros" class="hide">
+    <div class="wrap" style="padding-top:22px;">
+      <div class="metric-grid three">
+        <div class="metric"><div class="mv" id="evPending" style="color:var(--clay);">0</div><div class="ml">a revisar</div></div>
+        <div class="metric"><div class="mv" id="evRevised" style="color:var(--olive);">0</div><div class="ml">revisados</div></div>
+        <div class="metric"><div class="mv small" id="evWeak" style="color:var(--gold);">—</div><div class="ml">ponto mais fraco</div></div>
+      </div>
+      <div id="reasonBox" class="hide" style="margin-top:12px; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px;">
+        <div class="muted" style="font-size:11.5px; text-transform:uppercase; letter-spacing:.6px; margin-bottom:9px;">Por que você tem errado (pendentes)</div>
+        <div id="reasonChips" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
+      </div>
+    </div>
+
+    <div class="wrap" style="padding-top:20px;">
+      <div class="panel" style="padding:18px;">
+        <div class="serif" style="font-size:17px; font-weight:700; margin-bottom:14px;">Registrar um erro</div>
+        <div style="display:grid; grid-template-columns:160px 1fr; gap:12px; margin-bottom:12px;">
+          <div>
+            <label class="lbl">Matéria</label>
+            <select class="inp" id="errSubject"></select>
+          </div>
+          <div>
+            <label class="lbl">Assunto / o que a questão pedia</label>
+            <input class="inp" id="errTopic" placeholder="ex.: regra de três composta" />
+          </div>
+        </div>
+        <label class="lbl">Por que errei</label>
+        <div id="reasonPicker" style="display:flex; gap:7px; flex-wrap:wrap; margin-bottom:14px;"></div>
+        <label class="lbl">Lição / o que lembrar (opcional)</label>
+        <input class="inp" id="errLesson" placeholder="ex.: quando a grandeza é inversa, inverto a fração" style="margin-bottom:14px;" />
+        <button class="primary" id="addErr">Guardar no caderno</button>
+      </div>
+
+      <div id="errSubjChips" style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;"></div>
+      <div style="display:flex; gap:8px; margin-top:8px;">
+        <input class="addinput" id="newSubjErros" placeholder="Nova matéria (compartilhada com a aba Estudos)" />
+        <button class="addbtn" id="addSubjErros">+ Matéria</button>
+      </div>
+    </div>
+
+    <div class="wrap" style="padding-top:26px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:14px;">
+        <div id="filterChips" style="display:flex; gap:7px; flex-wrap:wrap;"></div>
+        <span class="ghost" id="toggleRevised">mostrar revisados</span>
+      </div>
+      <div id="errList" style="display:flex; flex-direction:column; gap:10px;"></div>
+      <div class="muted" style="margin-top:22px; font-size:12.5px; line-height:1.55;">
+        Dica: na reta final, filtre por matéria e revise só os pendentes. Registre os erros que te surpreenderam — qualidade acima de quantidade.
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
