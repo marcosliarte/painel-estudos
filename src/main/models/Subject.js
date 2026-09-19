@@ -16,6 +16,10 @@ function remove(name) {
   getDb().prepare("DELETE FROM subjects WHERE name = ?").run(name);
 }
 
+function rename(oldName, newName) {
+  getDb().prepare("UPDATE subjects SET name = ? WHERE name = ?").run(newName, oldName);
+}
+
 function removeAll() {
   getDb().prepare("DELETE FROM subjects").run();
 }
@@ -28,4 +32,4 @@ function insertMany(names) {
   insert(names);
 }
 
-module.exports = { list, exists, add, remove, removeAll, insertMany };
+module.exports = { list, exists, add, remove, rename, removeAll, insertMany };

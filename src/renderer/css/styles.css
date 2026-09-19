@@ -58,6 +58,9 @@ button{font-family:inherit;}
 .revbtn{cursor:pointer; border:1px solid var(--olive); background:#fff; color:var(--olive); border-radius:7px; padding:6px 12px; font-size:12.5px; font-weight:600; transition:.12s;}
 .revbtn:hover{background:var(--olive); color:#fff;}
 .revbtn.done{background:#EDE7D8; color:var(--ink-soft); border-color:var(--line);}
+.ranksort{transition:.12s;}
+.ranksort:hover{color:var(--ink);}
+.ranksort.on{color:var(--olive); font-weight:700;}
 .hide{display:none !important;}
 select.inp{appearance:auto;}
 #toast{position:fixed; bottom:22px; left:50%; transform:translateX(-50%); background:var(--ink); color:var(--paper); padding:9px 18px; border-radius:8px; font-size:13.5px; box-shadow:0 4px 16px rgba(0,0,0,.2); z-index:50; opacity:0; transition:opacity .2s; pointer-events:none;}

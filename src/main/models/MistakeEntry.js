@@ -40,6 +40,10 @@ function removeBySubject(subject) {
   getDb().prepare("DELETE FROM mistake_entries WHERE subject = ?").run(subject);
 }
 
+function renameSubject(oldName, newName) {
+  getDb().prepare("UPDATE mistake_entries SET subject = ? WHERE subject = ?").run(newName, oldName);
+}
+
 function removeAll() {
   getDb().prepare("DELETE FROM mistake_entries").run();
 }
@@ -56,4 +60,4 @@ function insertMany(entries) {
   insert(entries);
 }
 
-module.exports = { list, add, toggleRevised, remove, removeBySubject, removeAll, insertMany };
+module.exports = { list, add, toggleRevised, remove, removeBySubject, renameSubject, removeAll, insertMany };

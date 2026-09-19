@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld("api", {
     list: () => ipcRenderer.invoke("subjects:list"),
     add: (name) => ipcRenderer.invoke("subjects:add", name),
     remove: (name) => ipcRenderer.invoke("subjects:remove", name),
+    rename: (oldName, newName) => ipcRenderer.invoke("subjects:rename", { oldName, newName }),
   },
   studyLog: {
     getAll: () => ipcRenderer.invoke("studyLog:getAll"),

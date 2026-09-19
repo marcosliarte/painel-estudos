@@ -21,6 +21,17 @@ function registerSubjectsHandlers(ipcMain) {
     MistakeEntry.removeBySubject(name);
     return { ok: true };
   });
+
+  ipcMain.handle("subjects:rename", async (_event, { oldName, newName }) => {
+    const trimmed = String(newName || "").trim();
+    if (!trimmed) return { ok: false, reason: "empty" };
+    if (trimmed === oldName) return { ok: true };
+    if (Subject.exists(trimmed)) return { ok: false, reason: "duplicate" };
+    Subject.rename(oldName, trimmed);
+    StudyEntry.renameSubject(oldName, trimmed);
+    MistakeEntry.renameSubject(oldName, trimmed);
+    return { ok: true };
+  });
 }
 
 module.exports = { registerSubjectsHandlers };

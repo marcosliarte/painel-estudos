@@ -32,6 +32,29 @@ function removeBySubject(subject) {
   getDb().prepare("DELETE FROM study_entries WHERE subject = ?").run(subject);
 }
 
+function renameSubject(oldName, newName) {
+  const db = getDb();
+  const rename = db.transaction(() => {
+    const rows = db.prepare("SELECT * FROM study_entries WHERE subject = ?").all(oldName);
+    rows.forEach((row) => {
+      const existing = db
+        .prepare("SELECT * FROM study_entries WHERE date = ? AND subject = ?")
+        .get(row.date, newName);
+      if (existing) {
+        db.prepare("UPDATE study_entries SET minutes = ?, questions = ? WHERE id = ?").run(
+          existing.minutes + row.minutes,
+          existing.questions + row.questions,
+          existing.id
+        );
+        db.prepare("DELETE FROM study_entries WHERE id = ?").run(row.id);
+      } else {
+        db.prepare("UPDATE study_entries SET subject = ? WHERE id = ?").run(newName, row.id);
+      }
+    });
+  });
+  rename();
+}
+
 function removeByDate(date) {
   getDb().prepare("DELETE FROM study_entries WHERE date = ?").run(date);
 }
@@ -56,6 +79,7 @@ module.exports = {
   setMinutes,
   setQuestions,
   removeBySubject,
+  renameSubject,
   removeByDate,
   removeAll,
   insertMany,

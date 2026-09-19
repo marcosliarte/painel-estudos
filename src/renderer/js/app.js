@@ -20,6 +20,8 @@
   var errFilter = "todas";
   var editingMinSubject = null; // matéria cujo campo de tempo está em edição manual (separado dos botões +/-)
   var showRevised = false;
+  var subjectRankSort = "min"; // 'min' | 'days' | 'q'
+  var renamingSubject = null; // matéria cujo nome está em edição inline
 
   // ————— estado CRONÔMETRO —————
   var timerMode = "stopwatch"; // 'stopwatch' | 'countdown' | 'pomodoro'
@@ -81,6 +83,27 @@
     entries = entries.filter(function (e) { return e.subject !== name; });
     renderAll();
     flash("Matéria removida");
+  }
+  function rerenderForTab() { if (currentTab === "erros") renderErros(); else renderEstudos(); }
+  function startRenameSubject(subject) {
+    renamingSubject = subject;
+    rerenderForTab();
+    var input = document.querySelector("[data-renameinput]");
+    if (input) { input.focus(); input.select(); }
+  }
+  function cancelRenameSubject() {
+    renamingSubject = null;
+    rerenderForTab();
+  }
+  async function commitRenameSubject(oldName, novo) {
+    novo = (novo || "").trim();
+    renamingSubject = null;
+    if (!novo || novo === oldName) { rerenderForTab(); return; }
+    var res = await window.api.subjects.rename(oldName, novo);
+    if (!res.ok) { flash(res.reason === "duplicate" ? "Já existe uma matéria com esse nome" : "Nome inválido"); rerenderForTab(); return; }
+    await load();
+    renderAll();
+    flash("Matéria renomeada");
   }
 
   // ————— backup —————
@@ -177,8 +200,12 @@
       row.style.cssText = "display:grid; grid-template-columns:1fr auto auto; gap:12px; align-items:center; padding:12px 4px; border-bottom:1px solid var(--line);";
       row.innerHTML =
         '<div style="display:flex; align-items:center; gap:6px; min-width:0;">' +
-        '<span style="font-size:15px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + esc(subj) + '</span>' +
-        '<button class="xbtn" data-rm-subj="' + esc(subj) + '" title="Remover matéria">✕</button>' +
+        (renamingSubject === subj
+          ? '<input class="inp" data-renameinput="' + esc(subj) + '" value="' + esc(subj) + '" style="max-width:220px; padding:4px 8px;" title="Enter para salvar · Esc para cancelar" />'
+          : '<span style="font-size:15px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + esc(subj) + '</span>' +
+            '<button class="xbtn" data-rename-subj="' + esc(subj) + '" title="Renomear matéria">✎</button>' +
+            '<button class="xbtn" data-rm-subj="' + esc(subj) + '" title="Remover matéria">✕</button>'
+        ) +
         '</div>' +
         '<div style="display:flex; align-items:center; gap:5px; width:148px; justify-content:center;">' +
         '<span class="stepbtn" data-min="' + esc(subj) + '" data-d="-15">−</span>' +
@@ -207,6 +234,7 @@
     document.getElementById("mAvg").textContent = fmtHours(s.avg);
     document.getElementById("mDays").textContent = s.activeDays;
     document.getElementById("mQ").textContent = s.totalQ;
+    renderSubjectRanking();
     var dt = dayTotals();
     document.getElementById("daySub").textContent = fmtHours(dt.min) + " · " + dt.q + " questões";
     // history
@@ -227,6 +255,49 @@
         '<span style="position:absolute; right:8px; top:0; height:100%; display:flex; align-items:center; font-size:11.5px; color:var(--ink); font-weight:600;">' + fmtHours(d.min) + (d.q ? " · " + d.q + "q" : "") + '</span>' +
         '</div>';
       chart.appendChild(row);
+    });
+  }
+
+  function computeSubjectRanking() {
+    var map = {};
+    subjects.forEach(function (s) { map[s] = { subject: s, min: 0, q: 0, days: 0 }; });
+    Object.keys(log).forEach(function (dateKey) {
+      var day = log[dateKey];
+      Object.keys(day).forEach(function (s) {
+        if (!map[s]) map[s] = { subject: s, min: 0, q: 0, days: 0 };
+        var e = day[s];
+        map[s].min += e.min || 0;
+        map[s].q += e.q || 0;
+        if ((e.min || 0) > 0 || (e.q || 0) > 0) map[s].days += 1;
+      });
+    });
+    var arr = Object.keys(map).map(function (k) { return map[k]; });
+    arr.sort(function (a, b) { return b[subjectRankSort] - a[subjectRankSort]; });
+    return arr;
+  }
+
+  function renderSubjectRanking() {
+    document.querySelectorAll(".ranksort").forEach(function (el) {
+      el.classList.toggle("on", el.getAttribute("data-sort") === subjectRankSort);
+    });
+    var host = document.getElementById("subjRankRows"); host.innerHTML = "";
+    var arr = computeSubjectRanking();
+    if (!arr.length) {
+      host.innerHTML = '<div class="muted" style="padding:22px 4px; font-size:14px; font-style:italic;">Sem dados ainda. Registre estudos para ver o ranking aqui.</div>';
+      return;
+    }
+    arr.forEach(function (d, idx) {
+      var row = document.createElement("div");
+      row.style.cssText = "display:grid; grid-template-columns:1fr 74px 56px 70px; gap:12px; align-items:center; padding:10px 4px; border-bottom:1px solid var(--line);";
+      row.innerHTML =
+        '<div style="display:flex; align-items:center; gap:8px; min-width:0;">' +
+        '<span class="muted" style="font-size:11.5px; width:16px; text-align:right;">' + (idx + 1) + '</span>' +
+        '<span style="font-size:14.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + esc(d.subject) + '</span>' +
+        '</div>' +
+        '<span style="text-align:center; font-size:13px; font-variant-numeric:tabular-nums;' + (subjectRankSort === "min" ? " font-weight:700; color:var(--olive);" : "") + '">' + fmtHours(d.min) + '</span>' +
+        '<span style="text-align:center; font-size:13px; font-variant-numeric:tabular-nums;' + (subjectRankSort === "days" ? " font-weight:700; color:var(--olive);" : "") + '">' + d.days + '</span>' +
+        '<span style="text-align:center; font-size:13px; font-variant-numeric:tabular-nums;' + (subjectRankSort === "q" ? " font-weight:700; color:var(--olive);" : "") + '">' + d.q + '</span>';
+      host.appendChild(row);
     });
   }
 
@@ -281,7 +352,9 @@
       var span = document.createElement("span");
       span.className = "subjchip";
       span.style.cssText = "font-size:12.5px; background:var(--card); border:1px solid var(--line); border-radius:6px; padding:4px 8px; display:inline-flex; align-items:center;";
-      span.innerHTML = esc(su) + '<button class="subjx" data-rm-subj="' + esc(su) + '" title="Remover">✕</button>';
+      span.innerHTML = renamingSubject === su
+        ? '<input class="inp" data-renameinput="' + esc(su) + '" value="' + esc(su) + '" style="width:130px; padding:3px 6px; font-size:12.5px;" title="Enter para salvar · Esc para cancelar" />'
+        : esc(su) + '<button class="subjx" data-rename-subj="' + esc(su) + '" title="Renomear">✎</button><button class="subjx" data-rm-subj="' + esc(su) + '" title="Remover">✕</button>';
       ec.appendChild(span);
     });
 
@@ -583,6 +656,8 @@
       if (t.hasAttribute("data-min")) { updateEntry(t.getAttribute("data-min"), "min", parseInt(t.getAttribute("data-d"), 10)); }
       else if (t.hasAttribute("data-q")) { updateEntry(t.getAttribute("data-q"), "q", parseInt(t.getAttribute("data-d"), 10)); }
       else if (t.hasAttribute("data-rm-subj")) { removeSubject(t.getAttribute("data-rm-subj")); }
+      else if (t.hasAttribute("data-rename-subj")) { startRenameSubject(t.getAttribute("data-rename-subj")); }
+      else if (t.hasAttribute("data-sort")) { subjectRankSort = t.getAttribute("data-sort"); renderSubjectRanking(); }
       else if (t.hasAttribute("data-edit-min")) { startMinEdit(t.getAttribute("data-edit-min")); }
       else if (t.hasAttribute("data-reason")) { errReason = t.getAttribute("data-reason"); renderErros(); }
       else if (t.hasAttribute("data-filter")) { errFilter = t.getAttribute("data-filter"); renderErros(); }
@@ -597,12 +672,25 @@
       else if (t.hasAttribute("data-mininput")) { setEntryMin(t.getAttribute("data-mininput"), t.value); }
     });
 
-    // Enter salva / Esc cancela a edição manual de minutos
+    // dispara sempre ao perder o foco (Enter sem alterar o texto não gera "change")
+    document.body.addEventListener("focusout", function (ev) {
+      var t = ev.target;
+      if (!t.hasAttribute || !t.hasAttribute("data-renameinput")) return;
+      var subj = t.getAttribute("data-renameinput");
+      if (renamingSubject === subj) commitRenameSubject(subj, t.value);
+    });
+
+    // Enter salva / Esc cancela a edição manual de minutos e o renomear de matéria
     document.body.addEventListener("keydown", function (ev) {
       var t = ev.target;
-      if (!t.hasAttribute || !t.hasAttribute("data-mininput")) return;
-      if (ev.key === "Enter") { t.blur(); }
-      else if (ev.key === "Escape") { cancelMinEdit(); }
+      if (!t.hasAttribute) return;
+      if (t.hasAttribute("data-mininput")) {
+        if (ev.key === "Enter") { t.blur(); }
+        else if (ev.key === "Escape") { cancelMinEdit(); }
+      } else if (t.hasAttribute("data-renameinput")) {
+        if (ev.key === "Enter") { commitRenameSubject(t.getAttribute("data-renameinput"), t.value); }
+        else if (ev.key === "Escape") { cancelRenameSubject(); }
+      }
     });
 
     // cronômetro

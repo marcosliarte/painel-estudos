@@ -129,6 +129,20 @@
       <div class="muted" style="font-size:12.5px; margin-bottom:14px;">Cada barra é um dia. O que importa não é a altura — é não deixar buracos.</div>
       <div id="historyChart" style="display:flex; flex-direction:column; gap:7px;"></div>
     </div>
+
+    <div class="wrap" style="padding-top:28px;">
+      <div class="serif" style="font-size:18px; font-weight:700; margin-bottom:4px;">Matérias mais estudadas</div>
+      <div class="muted" style="font-size:12.5px; margin-bottom:14px;">Soma de todo o histórico, por matéria. Clique num cabeçalho para ordenar.</div>
+      <div class="panel" style="padding:0 18px 4px;">
+        <div style="display:grid; grid-template-columns:1fr 74px 56px 70px; gap:12px; padding:10px 4px 8px; font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.6px; border-bottom:1px solid var(--line);">
+          <span>Matéria</span>
+          <span class="ranksort" data-sort="min" style="text-align:center; cursor:pointer;">Horas</span>
+          <span class="ranksort" data-sort="days" style="text-align:center; cursor:pointer;">Dias</span>
+          <span class="ranksort" data-sort="q" style="text-align:center; cursor:pointer;">Questões</span>
+        </div>
+        <div id="subjRankRows"></div>
+      </div>
+    </div>
   </div>
 
   <!-- ABA ERROS -->
