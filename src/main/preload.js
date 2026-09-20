@@ -25,8 +25,19 @@ contextBridge.exposeInMainWorld("api", {
     toggleRevised: (id) => ipcRenderer.invoke("mistakes:toggleRevised", id),
     remove: (id) => ipcRenderer.invoke("mistakes:remove", id),
   },
+  flashcards: {
+    list: () => ipcRenderer.invoke("flashcards:list"),
+    listDue: () => ipcRenderer.invoke("flashcards:listDue"),
+    add: (card) => ipcRenderer.invoke("flashcards:add", card),
+    update: (id, front, back) => ipcRenderer.invoke("flashcards:update", { id, front, back }),
+    review: (id, correct) => ipcRenderer.invoke("flashcards:review", { id, correct }),
+    remove: (id) => ipcRenderer.invoke("flashcards:remove", id),
+  },
   backup: {
     export: () => ipcRenderer.invoke("backup:export"),
     import: () => ipcRenderer.invoke("backup:import"),
+  },
+  notify: {
+    show: (title, body) => ipcRenderer.invoke("notify:show", { title, body }),
   },
 });

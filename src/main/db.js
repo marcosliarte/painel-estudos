@@ -34,6 +34,16 @@ function initDatabase() {
       lesson TEXT NOT NULL DEFAULT '',
       revised INTEGER NOT NULL DEFAULT 0
     );
+
+    CREATE TABLE IF NOT EXISTS flashcards (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      subject TEXT NOT NULL,
+      front TEXT NOT NULL,
+      back TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      box INTEGER NOT NULL DEFAULT 1,
+      next_review INTEGER NOT NULL
+    );
   `);
 
   return db;

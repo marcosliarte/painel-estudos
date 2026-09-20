@@ -12,6 +12,7 @@
     <div style="display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px;">
       <h1>Painel de Estudos</h1>
       <div style="display:flex; align-items:center; gap:8px;">
+        <button class="backupbtn" id="btnTheme" title="Alternar entre modo claro e escuro">🌙 Escuro</button>
         <button class="backupbtn" id="btnExport" title="Salvar uma cópia de segurança dos seus dados">⭳ Backup</button>
         <button class="backupbtn" id="btnImport" title="Restaurar dados de um backup">⭱ Restaurar</button>
       </div>
@@ -25,6 +26,10 @@
         <span class="tl"><span class="tlabel">Erros</span><span class="badge hide" id="badgeErros">0</span></span>
         <span class="thint">o que revisar</span>
       </button>
+      <button class="tab" id="tabFlash" data-tab="flash">
+        <span class="tl"><span class="tlabel">Flashcards</span><span class="badge hide" id="badgeFlash">0</span></span>
+        <span class="thint">memorização</span>
+      </button>
     </div>
   </div>
 
@@ -32,7 +37,7 @@
   <div id="viewEstudos">
     <div class="wrap" style="padding-top:22px;">
       <div style="display:flex; align-items:center; gap:10px;">
-        <div class="serif" id="streakNum" style="font-size:42px; font-weight:700; color:var(--ink-soft); line-height:1;">0</div>
+        <div class="mono" id="streakNum" style="font-size:42px; font-weight:700; color:var(--ink-soft); line-height:1;">0</div>
         <div class="muted" style="font-size:14px; line-height:1.35;">
           <span id="streakLabel">dias seguidos</span><br />
           <span style="font-size:12px;">estudando. o hábito é a vitória.</span>
@@ -73,8 +78,8 @@
         </div>
 
         <div style="text-align:center; padding:14px 0 6px;">
-          <span id="timerPhaseBadge" class="hide" style="display:inline-block; color:#fff; font-size:11.5px; font-weight:700; padding:3px 10px; border-radius:12px; margin-bottom:8px; text-transform:uppercase; letter-spacing:.5px;"></span>
-          <div class="serif" id="timerDisplay" style="font-size:48px; font-weight:700; font-variant-numeric:tabular-nums; line-height:1;">00:00</div>
+          <span id="timerPhaseBadge" class="hide" style="display:inline-block; color:var(--on-accent); font-size:11.5px; font-weight:700; padding:3px 10px; border-radius:6px; margin-bottom:8px; text-transform:uppercase; letter-spacing:.5px;"></span>
+          <div class="mono" id="timerDisplay" style="font-size:44px; font-weight:700; line-height:1;">00:00</div>
           <div class="muted" id="timerSub" style="font-size:12.5px; margin-top:6px;">escolha uma matéria para começar</div>
         </div>
 
@@ -113,6 +118,7 @@
         </div>
         <div id="subjRows"></div>
         <div class="muted" style="font-size:11.5px; padding:10px 4px 4px;">Tempo em passos de 15 min (✎ pra digitar um valor exato) · questões em passos de 5 (ou digite direto).</div>
+        <div class="muted" style="font-size:11.5px; padding:2px 4px 4px;">● a bolinha ao lado do nome mostra o quão "fresca" a matéria está: verde = estudada recentemente, vermelho = risco de esquecer.</div>
       </div>
 
       <div style="display:flex; gap:8px; margin-top:14px;">
@@ -121,6 +127,32 @@
       </div>
       <div class="muted" style="font-size:12px; margin-top:8px; line-height:1.5;">
         As matérias valem também para a aba Erros. Ao mudar de edital, remova as antigas (✕) e adicione as novas — o histórico continua salvo.
+      </div>
+    </div>
+
+    <div class="wrap" style="padding-top:28px;">
+      <div style="display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:4px;">
+        <div class="serif" style="font-size:18px; font-weight:700;">Seu mapa de estudos</div>
+        <div class="muted" id="heatmapTotal" style="font-size:12px;">0 dias estudados</div>
+      </div>
+      <div class="muted" style="font-size:12.5px; margin-bottom:14px;">Cada quadrado é um dia, quanto mais escuro mais tempo estudado — igual ao gráfico de commits do GitHub. Clique num dia pra ver os detalhes.</div>
+      <div class="panel" id="heatmapScroll" style="padding:16px 18px; overflow-x:auto;">
+        <div style="display:inline-block; min-width:100%;">
+          <div id="heatmapMonths" style="display:flex; gap:3px; margin-left:26px; margin-bottom:4px;"></div>
+          <div style="display:flex; gap:3px;">
+            <div id="heatmapDayLabels" style="display:flex; flex-direction:column; gap:3px; width:22px; margin-right:4px;"></div>
+            <div id="heatmapGrid" style="display:grid; grid-auto-flow:column; grid-template-rows:repeat(7, 11px); gap:3px;"></div>
+          </div>
+          <div style="display:flex; align-items:center; justify-content:flex-end; gap:4px; margin-top:10px; font-size:11px; color:var(--ink-soft);">
+            <span>menos</span>
+            <span class="heatcell" data-level="0" style="cursor:default;"></span>
+            <span class="heatcell" data-level="1" style="cursor:default;"></span>
+            <span class="heatcell" data-level="2" style="cursor:default;"></span>
+            <span class="heatcell" data-level="3" style="cursor:default;"></span>
+            <span class="heatcell" data-level="4" style="cursor:default;"></span>
+            <span>mais</span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -153,7 +185,7 @@
         <div class="metric"><div class="mv" id="evRevised" style="color:var(--olive);">0</div><div class="ml">revisados</div></div>
         <div class="metric"><div class="mv small" id="evWeak" style="color:var(--gold);">—</div><div class="ml">ponto mais fraco</div></div>
       </div>
-      <div id="reasonBox" class="hide" style="margin-top:12px; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px;">
+      <div id="reasonBox" class="hide" style="margin-top:12px; background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px 14px;">
         <div class="muted" style="font-size:11.5px; text-transform:uppercase; letter-spacing:.6px; margin-bottom:9px;">Por que você tem errado (pendentes)</div>
         <div id="reasonChips" style="display:flex; gap:6px; flex-wrap:wrap;"></div>
       </div>
@@ -194,6 +226,80 @@
       <div id="errList" style="display:flex; flex-direction:column; gap:10px;"></div>
       <div class="muted" style="margin-top:22px; font-size:12.5px; line-height:1.55;">
         Dica: na reta final, filtre por matéria e revise só os pendentes. Registre os erros que te surpreenderam — qualidade acima de quantidade.
+      </div>
+    </div>
+  </div>
+
+  <!-- ABA FLASHCARDS -->
+  <div id="viewFlash" class="hide">
+    <div class="wrap" style="padding-top:22px;">
+      <div class="metric-grid three">
+        <div class="metric"><div class="mv" id="fcTotal" style="color:var(--ink);">0</div><div class="ml">cartões</div></div>
+        <div class="metric"><div class="mv" id="fcDue" style="color:var(--clay);">0</div><div class="ml">a revisar</div></div>
+        <div class="metric"><div class="mv" id="fcMastered" style="color:var(--olive);">0</div><div class="ml">dominados</div></div>
+      </div>
+    </div>
+
+    <!-- estudo (revisão) -->
+    <div class="wrap" style="padding-top:20px;">
+      <div class="panel" id="fcStudyIdle" style="padding:18px; text-align:center;">
+        <div class="serif" style="font-size:17px; font-weight:700; margin-bottom:6px;">Revisar cartões</div>
+        <div class="muted" id="fcStudyIdleMsg" style="font-size:13px; margin-bottom:14px;">Nenhum cartão para revisar agora.</div>
+        <button class="primary" id="fcStudyStart" style="width:auto; padding:10px 24px;">▶ Estudar agora</button>
+      </div>
+
+      <div class="panel hide" id="fcStudySession" style="padding:18px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+          <span class="muted" id="fcStudyProgress" style="font-size:12px;">1 / 1</span>
+          <span style="font-size:11px; font-weight:700; color:var(--olive); text-transform:uppercase; letter-spacing:.5px;" id="fcStudySubject"></span>
+        </div>
+        <div id="fcCard" style="cursor:pointer; background:var(--card); border:1px solid var(--line); border-radius:8px; padding:34px 20px; min-height:120px; display:flex; align-items:center; justify-content:center; text-align:center;">
+          <div class="serif" id="fcCardText" style="font-size:18px; font-weight:600; line-height:1.4;"></div>
+        </div>
+        <div class="muted" id="fcCardHint" style="text-align:center; font-size:12px; margin-top:8px;">clique no cartão para ver a resposta</div>
+        <div id="fcCardActions" class="hide" style="display:flex; gap:10px; justify-content:center; margin-top:16px;">
+          <button class="ghost" id="fcWrong" style="border-color:var(--clay); color:var(--clay); padding:9px 20px;">✕ Errei</button>
+          <button class="ghost" id="fcRight" style="border-color:var(--olive); color:var(--olive); padding:9px 20px;">✓ Acertei</button>
+        </div>
+        <div style="text-align:center; margin-top:12px;">
+          <button id="fcStudyStop" style="font-size:11.5px; color:var(--ink-soft); border:none; background:none; cursor:pointer; text-decoration:underline; padding:2px 4px;">encerrar revisão</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- criar cartão -->
+    <div class="wrap" style="padding-top:24px;">
+      <div class="panel" style="padding:18px;">
+        <div class="serif" style="font-size:17px; font-weight:700; margin-bottom:14px;">Novo cartão</div>
+        <div style="margin-bottom:12px;">
+          <label class="lbl">Matéria</label>
+          <select class="inp" id="fcSubject"></select>
+        </div>
+        <div style="margin-bottom:12px;">
+          <label class="lbl">Pergunta (frente)</label>
+          <input class="inp" id="fcFront" placeholder="ex.: capital da Mongólia" />
+        </div>
+        <div style="margin-bottom:14px;">
+          <label class="lbl">Resposta (verso)</label>
+          <input class="inp" id="fcBack" placeholder="ex.: Ulan Bator" />
+        </div>
+        <button class="primary" id="fcAdd">Adicionar cartão</button>
+      </div>
+
+      <div style="display:flex; gap:8px; margin-top:12px;">
+        <input class="addinput" id="newSubjFlash" placeholder="Nova matéria (compartilhada com as outras abas)" />
+        <button class="addbtn" id="addSubjFlash">+ Matéria</button>
+      </div>
+    </div>
+
+    <!-- lista de cartões -->
+    <div class="wrap" style="padding-top:26px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:14px;">
+        <div id="fcFilterChips" style="display:flex; gap:7px; flex-wrap:wrap;"></div>
+      </div>
+      <div id="fcList" style="display:flex; flex-direction:column; gap:10px;"></div>
+      <div class="muted" style="margin-top:22px; font-size:12.5px; line-height:1.55;">
+        Cartões acertados sobem de caixa e voltam com mais espaçamento; errados voltam pro início. Foque nos que aparecem em "a revisar".
       </div>
     </div>
   </div>

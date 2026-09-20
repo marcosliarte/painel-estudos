@@ -3,15 +3,17 @@ const { dialog } = require("electron");
 const Subject = require("../models/Subject");
 const StudyEntry = require("../models/StudyEntry");
 const MistakeEntry = require("../models/MistakeEntry");
+const Flashcard = require("../models/Flashcard");
 
 function registerBackupHandlers(ipcMain, getMainWindow) {
   ipcMain.handle("backup:export", async () => {
     const subjects = Subject.list();
     const studyEntries = StudyEntry.findAll();
     const mistakes = MistakeEntry.list();
+    const flashcards = Flashcard.list();
 
     const data = {
-      version: 2,
+      version: 3,
       exportedAt: new Date().toISOString(),
       subjects,
       studyEntries: studyEntries.map((e) => ({
@@ -27,6 +29,14 @@ function registerBackupHandlers(ipcMain, getMainWindow) {
         reason: e.reason,
         lesson: e.lesson,
         revised: e.revised,
+      })),
+      flashcards: flashcards.map((c) => ({
+        subject: c.subject,
+        front: c.front,
+        back: c.back,
+        createdAt: c.createdAt,
+        box: c.box,
+        nextReview: c.nextReview,
       })),
     };
 
@@ -71,6 +81,10 @@ function registerBackupHandlers(ipcMain, getMainWindow) {
     if (Array.isArray(data.mistakes)) {
       MistakeEntry.removeAll();
       MistakeEntry.insertMany(data.mistakes);
+    }
+    if (Array.isArray(data.flashcards)) {
+      Flashcard.removeAll();
+      Flashcard.insertMany(data.flashcards);
     }
     return { ok: true };
   });

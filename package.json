@@ -1,6 +1,6 @@
 {
   "name": "painel-de-estudos",
-  "version": "1.0.0",
+  "version": "1.0.4",
   "description": "Painel de estudos offline (app desktop) com MongoDB local",
   "main": "src/main/main.js",
   "author": "Marcos",
@@ -8,6 +8,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
+    "predist": "npm version patch --no-git-tag-version",
     "dist": "electron-builder"
   },
   "dependencies": {
@@ -30,6 +31,7 @@
     "asarUnpack": [
       "**/node_modules/better-sqlite3/**/*"
     ],
+    "artifactName": "${productName} Setup ${version}.${ext}",
     "win": {
       "target": "nsis",
       "icon": "assets/icon.ico"

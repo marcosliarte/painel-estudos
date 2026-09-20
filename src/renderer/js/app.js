@@ -23,6 +23,13 @@
   var subjectRankSort = "min"; // 'min' | 'days' | 'q'
   var renamingSubject = null; // matéria cujo nome está em edição inline
 
+  // ————— estado FLASHCARDS —————
+  var FC_MAX_BOX = 5;
+  var flashcards = [];
+  var fcFilter = "todas";
+  var fcEditingId = null; // cartão cujos campos estão em edição inline
+  var fcSession = null; // { queue: [...], index: 0, flipped: bool }
+
   // ————— estado CRONÔMETRO —————
   var timerMode = "stopwatch"; // 'stopwatch' | 'countdown' | 'pomodoro'
   var timerSubject = "";
@@ -40,11 +47,42 @@
   var timerPomodoroRemainingSec = timerPomodoroFocoMin * 60;
   var timerPomodoroCycles = 0;
 
+  // ————— tema (claro/escuro) —————
+  var THEME_KEY = "painelEstudos.theme";
+  function getStoredTheme() {
+    try { return localStorage.getItem(THEME_KEY); } catch (e) { return null; }
+  }
+  function systemPrefersDark() {
+    return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  }
+  function effectiveTheme() {
+    var stored = getStoredTheme();
+    return (stored === "light" || stored === "dark") ? stored : (systemPrefersDark() ? "dark" : "light");
+  }
+  function applyTheme() {
+    var stored = getStoredTheme();
+    if (stored === "light" || stored === "dark") document.documentElement.setAttribute("data-theme", stored);
+    else document.documentElement.removeAttribute("data-theme");
+    var btn = document.getElementById("btnTheme");
+    if (btn) btn.textContent = effectiveTheme() === "dark" ? "☀️ Claro" : "🌙 Escuro";
+  }
+  function toggleTheme() {
+    var next = effectiveTheme() === "dark" ? "light" : "dark";
+    try { localStorage.setItem(THEME_KEY, next); } catch (e) { /* localStorage indisponível, tema não persiste */ }
+    applyTheme();
+  }
+
+  // ————— mapa de estudos (heatmap estilo GitHub) —————
+  var HEAT_WEEKS = 53;
+  var HEAT_MONTHS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+  var HEAT_DOW_LABELS = ["", "seg", "", "qua", "", "sex", ""];
+
   // ————— util —————
   function todayKey() { var d = new Date(); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
   function pad(n) { return String(n).padStart(2, "0"); }
   function fmtDay(key) { var p = key.split("-").map(Number); var date = new Date(p[0], p[1] - 1, p[2]); var wd = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"][date.getDay()]; return wd + " " + pad(p[2]) + "/" + pad(p[1]); }
   function fmtDate(ts) { var d = new Date(ts); return pad(d.getDate()) + "/" + pad(d.getMonth() + 1); }
+  function fmtHeatDate(date) { var wd = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"][date.getDay()]; return wd + " " + pad(date.getDate()) + "/" + pad(date.getMonth() + 1); }
   function fmtHours(min) { var h = Math.floor(min / 60), m = min % 60; if (h === 0) return m + "min"; if (m === 0) return h + "h"; return h + "h" + pad(m); }
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function reasonMeta(id) { for (var i = 0; i < REASONS.length; i++) { if (REASONS[i].id === id) return REASONS[i]; } return REASONS[0]; }
@@ -59,6 +97,7 @@
     }
     log = await window.api.studyLog.getAll();
     entries = await window.api.mistakes.list();
+    flashcards = await window.api.flashcards.list();
   }
 
   // ————— toast —————
@@ -84,7 +123,7 @@
     renderAll();
     flash("Matéria removida");
   }
-  function rerenderForTab() { if (currentTab === "erros") renderErros(); else renderEstudos(); }
+  function rerenderForTab() { if (currentTab === "erros") renderErros(); else if (currentTab === "flash") renderFlash(); else renderEstudos(); }
   function startRenameSubject(subject) {
     renamingSubject = subject;
     rerenderForTab();
@@ -146,6 +185,116 @@
     return { min: min, q: q };
   }
 
+  // ————— "frescor" da matéria (curva do esquecimento) —————
+  // Verde -> amarelo -> vermelho conforme os dias sem estudar aumentam. A curva usa
+  // decaimento exponencial (1 - e^-dias/6), como a curva de esquecimento de Ebbinghaus:
+  // cai rápido nos primeiros dias e depois desacelera.
+  var FRESH_STOPS = [
+    [46, 160, 67],   // verde: acabou de estudar
+    [191, 135, 0],   // amarelo: começando a esquecer
+    [229, 72, 77],   // vermelho: provavelmente esqueceu
+  ];
+  var FRESH_HALF_LIFE_DAYS = 6;
+
+  function daysSinceStudied(subject) {
+    var last = null;
+    Object.keys(log).forEach(function (dateKey) {
+      var e = log[dateKey][subject];
+      if (e && ((e.min || 0) > 0 || (e.q || 0) > 0)) {
+        if (last === null || dateKey > last) last = dateKey;
+      }
+    });
+    if (last === null) return null;
+    var p = last.split("-").map(Number);
+    var lastDate = new Date(p[0], p[1] - 1, p[2]);
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    return Math.round((today - lastDate) / 86400000);
+  }
+
+  function freshnessColor(days) {
+    if (days === null) return "var(--ink-soft)";
+    var decay = 1 - Math.exp(-days / FRESH_HALF_LIFE_DAYS);
+    decay = Math.max(0, Math.min(1, decay));
+    var a, b, t;
+    if (decay <= 0.5) { a = FRESH_STOPS[0]; b = FRESH_STOPS[1]; t = decay / 0.5; }
+    else { a = FRESH_STOPS[1]; b = FRESH_STOPS[2]; t = (decay - 0.5) / 0.5; }
+    var rgb = a.map(function (c, i) { return Math.round(c + (b[i] - c) * t); });
+    return "rgb(" + rgb.join(",") + ")";
+  }
+
+  function freshnessTitle(days) {
+    if (days === null) return "ainda não estudada";
+    if (days === 0) return "estudada hoje";
+    if (days === 1) return "estudada há 1 dia";
+    return "estudada há " + days + " dias";
+  }
+
+  function heatLevel(min) {
+    if (min <= 0) return 0;
+    if (min < 30) return 1;
+    if (min < 60) return 2;
+    if (min < 120) return 3;
+    return 4;
+  }
+
+  function computeHeatmapDays() {
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    var start = new Date(today);
+    start.setDate(start.getDate() - (HEAT_WEEKS - 1) * 7 - today.getDay());
+    var days = []; var d = new Date(start);
+    while (d <= today) {
+      var key = d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+      var dayLog = log[key] || {}, min = 0;
+      Object.keys(dayLog).forEach(function (s) { min += dayLog[s].min || 0; });
+      days.push({ key: key, date: new Date(d), min: min });
+      d.setDate(d.getDate() + 1);
+    }
+    return days;
+  }
+
+  function renderHeatmapDayLabels() {
+    var host = document.getElementById("heatmapDayLabels"); host.innerHTML = "";
+    HEAT_DOW_LABELS.forEach(function (lbl) {
+      var span = document.createElement("span");
+      span.textContent = lbl;
+      span.style.cssText = "height:11px; font-size:9px; color:var(--ink-soft); line-height:11px;";
+      host.appendChild(span);
+    });
+  }
+
+  function renderHeatmap() {
+    renderHeatmapDayLabels();
+    var days = computeHeatmapDays();
+    var grid = document.getElementById("heatmapGrid"); grid.innerHTML = "";
+    var monthsHost = document.getElementById("heatmapMonths"); monthsHost.innerHTML = "";
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    var studiedDays = 0, lastMonth = -1;
+    days.forEach(function (d) {
+      if (d.min > 0) studiedDays++;
+      if (d.date.getDay() === 0) {
+        var m = d.date.getMonth();
+        var col = document.createElement("span");
+        col.style.cssText = "width:11px; flex:0 0 auto; font-size:10px; color:var(--ink-soft);";
+        if (m !== lastMonth) { col.textContent = HEAT_MONTHS[m]; col.style.overflow = "visible"; col.style.whiteSpace = "nowrap"; lastMonth = m; }
+        monthsHost.appendChild(col);
+      }
+      var cell = document.createElement("span");
+      cell.className = "heatcell";
+      if (d.date > today) {
+        cell.style.visibility = "hidden";
+      } else {
+        cell.setAttribute("data-level", heatLevel(d.min));
+        cell.setAttribute("data-heatdate", d.key);
+        cell.title = fmtHeatDate(d.date) + " · " + (d.min > 0 ? fmtHours(d.min) + " estudados" : "nada estudado");
+      }
+      grid.appendChild(cell);
+    });
+    document.getElementById("heatmapTotal").textContent =
+      studiedDays + (studiedDays === 1 ? " dia estudado" : " dias estudados") + " nas últimas " + HEAT_WEEKS + " semanas";
+    var scrollHost = document.getElementById("heatmapScroll");
+    if (scrollHost) scrollHost.scrollLeft = scrollHost.scrollWidth;
+  }
+
   async function updateEntry(subject, field, delta) {
     var result = field === "min"
       ? await window.api.studyLog.adjustMinutes(viewDate, subject, delta)
@@ -198,8 +347,10 @@
       var row = document.createElement("div");
       row.className = "subjrow";
       row.style.cssText = "display:grid; grid-template-columns:1fr auto auto; gap:12px; align-items:center; padding:12px 4px; border-bottom:1px solid var(--line);";
+      var freshDays = daysSinceStudied(subj);
       row.innerHTML =
         '<div style="display:flex; align-items:center; gap:6px; min-width:0;">' +
+        '<span class="freshdot" style="background:' + freshnessColor(freshDays) + ';" title="' + esc(subj) + ' — ' + freshnessTitle(freshDays) + '"></span>' +
         (renamingSubject === subj
           ? '<input class="inp" data-renameinput="' + esc(subj) + '" value="' + esc(subj) + '" style="max-width:220px; padding:4px 8px;" title="Enter para salvar · Esc para cancelar" />'
           : '<span style="font-size:15px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + esc(subj) + '</span>' +
@@ -211,7 +362,7 @@
         '<span class="stepbtn" data-min="' + esc(subj) + '" data-d="-15">−</span>' +
         (editingMinSubject === subj
           ? '<input class="num" data-mininput="' + esc(subj) + '" value="' + (e.min || 0) + '" inputmode="numeric" title="Enter para salvar · Esc para cancelar" />'
-          : '<span style="font-size:13px; color:' + (e.min ? "var(--ink)" : "var(--ink-soft)") + '; min-width:48px; text-align:center; font-variant-numeric:tabular-nums;">' + fmtHours(e.min) + '</span>' +
+          : '<span class="mono" style="font-size:13px; color:' + (e.min ? "var(--ink)" : "var(--ink-soft)") + '; min-width:48px; text-align:center;">' + fmtHours(e.min) + '</span>' +
             '<button class="xbtn" data-edit-min="' + esc(subj) + '" title="Digitar valor exato de minutos">✎</button>'
         ) +
         '<span class="stepbtn" data-min="' + esc(subj) + '" data-d="15">+</span>' +
@@ -235,6 +386,7 @@
     document.getElementById("mDays").textContent = s.activeDays;
     document.getElementById("mQ").textContent = s.totalQ;
     renderSubjectRanking();
+    renderHeatmap();
     var dt = dayTotals();
     document.getElementById("daySub").textContent = fmtHours(dt.min) + " · " + dt.q + " questões";
     // history
@@ -250,9 +402,9 @@
       row.style.cssText = "display:flex; align-items:center; gap:10px;";
       row.innerHTML =
         '<span class="muted" style="width:62px; font-size:12px; text-align:right; font-variant-numeric:tabular-nums;">' + fmtDay(d.key) + '</span>' +
-        '<div style="flex:1; background:#EDE7D8; border-radius:5px; height:22px; position:relative; overflow:hidden;">' +
+        '<div style="flex:1; background:var(--track); border-radius:5px; height:22px; position:relative; overflow:hidden;">' +
         '<div style="width:' + pct + '%; height:100%; background:linear-gradient(90deg, var(--olive-soft), var(--olive)); border-radius:5px;"></div>' +
-        '<span style="position:absolute; right:8px; top:0; height:100%; display:flex; align-items:center; font-size:11.5px; color:var(--ink); font-weight:600;">' + fmtHours(d.min) + (d.q ? " · " + d.q + "q" : "") + '</span>' +
+        '<span class="mono" style="position:absolute; right:8px; top:0; height:100%; display:flex; align-items:center; font-size:11.5px; color:var(--ink); font-weight:600;">' + fmtHours(d.min) + (d.q ? " · " + d.q + "q" : "") + '</span>' +
         '</div>';
       chart.appendChild(row);
     });
@@ -289,14 +441,16 @@
     arr.forEach(function (d, idx) {
       var row = document.createElement("div");
       row.style.cssText = "display:grid; grid-template-columns:1fr 74px 56px 70px; gap:12px; align-items:center; padding:10px 4px; border-bottom:1px solid var(--line);";
+      var freshDays = daysSinceStudied(d.subject);
       row.innerHTML =
         '<div style="display:flex; align-items:center; gap:8px; min-width:0;">' +
         '<span class="muted" style="font-size:11.5px; width:16px; text-align:right;">' + (idx + 1) + '</span>' +
+        '<span class="freshdot" style="background:' + freshnessColor(freshDays) + ';" title="' + esc(d.subject) + ' — ' + freshnessTitle(freshDays) + '"></span>' +
         '<span style="font-size:14.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + esc(d.subject) + '</span>' +
         '</div>' +
-        '<span style="text-align:center; font-size:13px; font-variant-numeric:tabular-nums;' + (subjectRankSort === "min" ? " font-weight:700; color:var(--olive);" : "") + '">' + fmtHours(d.min) + '</span>' +
-        '<span style="text-align:center; font-size:13px; font-variant-numeric:tabular-nums;' + (subjectRankSort === "days" ? " font-weight:700; color:var(--olive);" : "") + '">' + d.days + '</span>' +
-        '<span style="text-align:center; font-size:13px; font-variant-numeric:tabular-nums;' + (subjectRankSort === "q" ? " font-weight:700; color:var(--olive);" : "") + '">' + d.q + '</span>';
+        '<span class="mono" style="text-align:center; font-size:13px;' + (subjectRankSort === "min" ? " font-weight:700; color:var(--olive);" : "") + '">' + fmtHours(d.min) + '</span>' +
+        '<span class="mono" style="text-align:center; font-size:13px;' + (subjectRankSort === "days" ? " font-weight:700; color:var(--olive);" : "") + '">' + d.days + '</span>' +
+        '<span class="mono" style="text-align:center; font-size:13px;' + (subjectRankSort === "q" ? " font-weight:700; color:var(--olive);" : "") + '">' + d.q + '</span>';
       host.appendChild(row);
     });
   }
@@ -325,7 +479,7 @@
       var arr = REASONS.filter(function (r) { return s.byReason[r.id]; }).sort(function (a, b) { return s.byReason[b.id] - s.byReason[a.id]; });
       arr.forEach(function (r) {
         var span = document.createElement("span");
-        span.style.cssText = "font-size:12.5px; background:#fff; border:1px solid var(--line); border-radius:6px; padding:4px 9px;";
+        span.style.cssText = "font-size:12.5px; background:var(--card); border:1px solid var(--line); border-radius:6px; padding:4px 9px;";
         span.innerHTML = '<span style="display:inline-block; width:8px; height:8px; border-radius:2px; background:' + r.color + '; margin-right:6px;"></span>' + esc(r.label) + ': <strong>' + s.byReason[r.id] + '</strong>';
         chips.appendChild(span);
       });
@@ -341,7 +495,7 @@
       span.className = "reason-chip"; span.setAttribute("data-reason", r.id);
       var on = errReason === r.id;
       span.style.borderColor = on ? r.color : "var(--line)";
-      span.style.background = on ? r.color : "#fff";
+      span.style.background = on ? r.color : "var(--card)";
       span.style.color = on ? "#fff" : "var(--ink)";
       span.textContent = r.label;
       rp.appendChild(span);
@@ -384,7 +538,7 @@
       var rm = reasonMeta(e.reason);
       var card = document.createElement("div");
       card.className = "card-e";
-      card.style.cssText = "background:var(--card); border:1px solid " + (e.revised ? "var(--line)" : "var(--clay-soft)") + "; border-left:4px solid " + (e.revised ? "var(--line)" : rm.color) + "; border-radius:10px; padding:14px 16px; opacity:" + (e.revised ? "0.72" : "1") + ";";
+      card.style.cssText = "background:var(--card); border:1px solid " + (e.revised ? "var(--line)" : "var(--clay-soft)") + "; border-left:3px solid " + (e.revised ? "var(--line)" : rm.color) + "; border-radius:8px; padding:14px 16px; opacity:" + (e.revised ? "0.72" : "1") + ";";
       card.innerHTML =
         '<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">' +
         '<div style="min-width:0; flex:1;">' +
@@ -418,6 +572,193 @@
     renderErros(); flash("Erro registrado");
   }
 
+  // ————— cálculos/render FLASHCARDS —————
+  function computeFlashStats() {
+    var now = Date.now();
+    var due = 0, mastered = 0;
+    flashcards.forEach(function (c) {
+      if (c.nextReview <= now) due++;
+      if (c.box >= FC_MAX_BOX) mastered++;
+    });
+    return { total: flashcards.length, due: due, mastered: mastered };
+  }
+
+  function renderFlash() {
+    var s = computeFlashStats();
+    document.getElementById("fcTotal").textContent = s.total;
+    document.getElementById("fcDue").textContent = s.due;
+    document.getElementById("fcMastered").textContent = s.mastered;
+    var badge = document.getElementById("badgeFlash");
+    if (s.due > 0) { badge.textContent = s.due; badge.classList.remove("hide"); } else { badge.classList.add("hide"); }
+
+    // matéria (select do formulário de novo cartão)
+    var sel = document.getElementById("fcSubject"); var prev = sel.value; sel.innerHTML = "";
+    subjects.forEach(function (su) { var o = document.createElement("option"); o.value = su; o.textContent = su; sel.appendChild(o); });
+    if (subjects.indexOf(prev) > -1) sel.value = prev;
+
+    // chips de filtro
+    var fc = document.getElementById("fcFilterChips"); fc.innerHTML = "";
+    var all = document.createElement("span"); all.className = "ghost" + (fcFilter === "todas" ? " on" : ""); all.setAttribute("data-fcfilter", "todas"); all.textContent = "Todas"; fc.appendChild(all);
+    subjects.forEach(function (su) {
+      var span = document.createElement("span"); span.className = "ghost" + (fcFilter === su ? " on" : ""); span.setAttribute("data-fcfilter", su); span.textContent = su; fc.appendChild(span);
+    });
+
+    renderFlashStudyPanel();
+    renderFlashList();
+  }
+
+  function renderFlashStudyPanel() {
+    var idlePanel = document.getElementById("fcStudyIdle");
+    var sessionPanel = document.getElementById("fcStudySession");
+    if (!fcSession) {
+      idlePanel.classList.remove("hide");
+      sessionPanel.classList.add("hide");
+      var s = computeFlashStats();
+      document.getElementById("fcStudyIdleMsg").textContent = s.due > 0
+        ? (s.due === 1 ? "1 cartão pronto pra revisar." : s.due + " cartões prontos pra revisar.")
+        : "Nenhum cartão para revisar agora.";
+      document.getElementById("fcStudyStart").disabled = s.due === 0;
+      return;
+    }
+    idlePanel.classList.add("hide");
+    sessionPanel.classList.remove("hide");
+    var card = fcSession.queue[fcSession.index];
+    document.getElementById("fcStudyProgress").textContent = (fcSession.index + 1) + " / " + fcSession.queue.length;
+    document.getElementById("fcStudySubject").textContent = card.subject;
+    document.getElementById("fcCardText").textContent = fcSession.flipped ? card.back : card.front;
+    document.getElementById("fcCardHint").classList.toggle("hide", fcSession.flipped);
+    document.getElementById("fcCardActions").classList.toggle("hide", !fcSession.flipped);
+  }
+
+  function renderFlashList() {
+    var host = document.getElementById("fcList"); host.innerHTML = "";
+    var visible = flashcards.filter(function (c) { return fcFilter === "todas" || c.subject === fcFilter; });
+    if (!visible.length) {
+      var msg = flashcards.length === 0
+        ? "Nenhum cartão ainda. Crie o primeiro acima — pergunta de um lado, resposta do outro."
+        : "Nada por aqui com esse filtro.";
+      host.innerHTML = '<div class="muted" style="text-align:center; padding:36px 20px; font-size:14px; font-style:italic; background:var(--card); border:1px dashed var(--line); border-radius:12px;">' + msg + '</div>';
+      return;
+    }
+    var now = Date.now();
+    visible.forEach(function (c) {
+      var due = c.nextReview <= now;
+      var card = document.createElement("div");
+      card.className = "card-e";
+      card.style.cssText = "background:var(--card); border:1px solid " + (due ? "var(--clay-soft)" : "var(--line)") + "; border-radius:8px; padding:14px 16px;";
+      if (fcEditingId === c.id) {
+        card.innerHTML =
+          '<div style="display:flex; flex-direction:column; gap:8px;">' +
+          '<span style="font-size:11px; font-weight:700; color:var(--olive); text-transform:uppercase; letter-spacing:.5px;">' + esc(c.subject) + '</span>' +
+          '<input class="inp" data-fcedit-front="' + c.id + '" value="' + esc(c.front) + '" placeholder="pergunta" />' +
+          '<input class="inp" data-fcedit-back="' + c.id + '" value="' + esc(c.back) + '" placeholder="resposta" />' +
+          '<div style="display:flex; gap:8px;">' +
+          '<button class="addbtn" data-fc-save="' + c.id + '">Salvar</button>' +
+          '<button class="ghost" data-fc-cancel="' + c.id + '">Cancelar</button>' +
+          '</div></div>';
+        host.appendChild(card);
+        return;
+      }
+      var dots = "";
+      for (var i = 1; i <= FC_MAX_BOX; i++) { dots += '<span class="boxdot' + (i <= c.box ? " on" : "") + '" title="caixa ' + c.box + '/' + FC_MAX_BOX + '"></span>'; }
+      card.innerHTML =
+        '<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">' +
+        '<div style="min-width:0; flex:1;">' +
+        '<div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:5px;">' +
+        '<span style="font-size:11px; font-weight:700; color:var(--olive); text-transform:uppercase; letter-spacing:.5px;">' + esc(c.subject) + '</span>' +
+        '<span style="display:inline-flex; gap:3px; align-items:center;">' + dots + '</span>' +
+        (due ? '<span style="font-size:11px; color:var(--on-accent); background:var(--clay); border-radius:5px; padding:2px 7px;">a revisar</span>' : '') +
+        '</div>' +
+        '<div style="font-size:15px; font-weight:600; margin-bottom:4px;">' + esc(c.front) + '</div>' +
+        '<div class="muted" style="font-size:13.5px; line-height:1.45;">↳ ' + esc(c.back) + '</div>' +
+        '</div>' +
+        '<div style="display:flex; flex-direction:column; gap:2px;">' +
+        '<button class="xbtn" data-fc-edit="' + c.id + '" title="Editar cartão">✎</button>' +
+        '<button class="xbtn" data-fc-rm="' + c.id + '" title="Remover cartão">✕</button>' +
+        '</div>' +
+        '</div>';
+      host.appendChild(card);
+    });
+  }
+
+  async function addFlashcard() {
+    var subject = document.getElementById("fcSubject").value;
+    var front = document.getElementById("fcFront").value.trim();
+    var back = document.getElementById("fcBack").value.trim();
+    if (!subject) { flash("Adicione uma matéria primeiro"); return; }
+    if (!front || !back) { flash("Preencha a pergunta e a resposta"); return; }
+    await window.api.flashcards.add({ subject: subject, front: front, back: back });
+    flashcards = await window.api.flashcards.list();
+    document.getElementById("fcFront").value = "";
+    document.getElementById("fcBack").value = "";
+    renderFlash();
+    flash("Cartão adicionado");
+  }
+
+  function startEditFlashcard(id) {
+    fcEditingId = id;
+    renderFlashList();
+    var input = document.querySelector('[data-fcedit-front="' + id + '"]');
+    if (input) { input.focus(); input.select(); }
+  }
+
+  function cancelEditFlashcard() {
+    fcEditingId = null;
+    renderFlashList();
+  }
+
+  async function saveEditFlashcard(id) {
+    var front = document.querySelector('[data-fcedit-front="' + id + '"]').value.trim();
+    var back = document.querySelector('[data-fcedit-back="' + id + '"]').value.trim();
+    if (!front || !back) { flash("Preencha a pergunta e a resposta"); return; }
+    await window.api.flashcards.update(id, front, back);
+    flashcards = await window.api.flashcards.list();
+    fcEditingId = null;
+    renderFlashList();
+    flash("Cartão atualizado");
+  }
+
+  async function removeFlashcard(id) {
+    await window.api.flashcards.remove(id);
+    flashcards = await window.api.flashcards.list();
+    renderFlash();
+    flash("Cartão removido");
+  }
+
+  async function startFlashSession() {
+    var due = await window.api.flashcards.listDue();
+    if (!due.length) { flash("Nada pra revisar agora"); return; }
+    fcSession = { queue: due, index: 0, flipped: false };
+    renderFlashStudyPanel();
+  }
+
+  function flipFlashcard() {
+    if (!fcSession) return;
+    fcSession.flipped = !fcSession.flipped;
+    renderFlashStudyPanel();
+  }
+
+  async function answerFlashcard(correct) {
+    if (!fcSession) return;
+    var card = fcSession.queue[fcSession.index];
+    await window.api.flashcards.review(card.id, correct);
+    flashcards = await window.api.flashcards.list();
+    if (fcSession.index + 1 < fcSession.queue.length) {
+      fcSession.index++;
+      fcSession.flipped = false;
+      renderFlashStudyPanel();
+    } else {
+      fcSession = null;
+      renderFlash();
+      flash("Revisão concluída ✓");
+    }
+  }
+
+  function stopFlashSession() {
+    fcSession = null;
+    renderFlash();
+  }
+
   // ————— CRONÔMETRO —————
   function fmtClock(totalSec) {
     totalSec = Math.max(0, Math.floor(totalSec));
@@ -426,11 +767,7 @@
   }
 
   function notifyUser(title, body) {
-    try {
-      if (typeof Notification === "undefined") return;
-      if (Notification.permission === "granted") { new Notification(title, { body: body }); }
-      else if (Notification.permission !== "denied") { Notification.requestPermission(); }
-    } catch (e) { /* notificações são só um extra, ignora falha */ }
+    try { window.api.notify.show(title, body); } catch (e) { /* notificação é só um extra, ignora falha */ }
   }
 
   async function commitTimerMinutes(subject, minutes) {
@@ -598,7 +935,7 @@
     btnFinish.classList.toggle("hide", timerStatus === "idle");
   }
 
-  function renderAll() { renderEstudos(); renderErros(); renderTimer(); }
+  function renderAll() { renderEstudos(); renderErros(); renderFlash(); renderTimer(); }
 
   async function clearDay() {
     var dt = dayTotals();
@@ -621,11 +958,13 @@
 
   // ————— eventos —————
   function bind() {
+    document.getElementById("btnTheme").addEventListener("click", toggleTheme);
     document.getElementById("btnExport").addEventListener("click", exportBackup);
     document.getElementById("btnImport").addEventListener("click", importBackup);
 
     document.getElementById("tabEstudos").addEventListener("click", function () { switchTab("estudos"); });
     document.getElementById("tabErros").addEventListener("click", function () { switchTab("erros"); });
+    document.getElementById("tabFlash").addEventListener("click", function () { switchTab("flash"); });
 
     document.getElementById("prevDay").addEventListener("click", function () { shiftDate(-1); });
     document.getElementById("nextDay").addEventListener("click", function () { shiftDate(1); });
@@ -643,12 +982,27 @@
     document.getElementById("newSubjErros").addEventListener("keydown", async function (e) {
       if (e.key === "Enter") { if (await addSubject(this.value)) this.value = ""; }
     });
+    document.getElementById("addSubjFlash").addEventListener("click", async function () {
+      var i = document.getElementById("newSubjFlash"); if (await addSubject(i.value)) i.value = "";
+    });
+    document.getElementById("newSubjFlash").addEventListener("keydown", async function (e) {
+      if (e.key === "Enter") { if (await addSubject(this.value)) this.value = ""; }
+    });
 
     document.getElementById("addErr").addEventListener("click", addErr);
     document.getElementById("errTopic").addEventListener("keydown", function (e) { if (e.key === "Enter") addErr(); });
     document.getElementById("errLesson").addEventListener("keydown", function (e) { if (e.key === "Enter") addErr(); });
 
     document.getElementById("toggleRevised").addEventListener("click", function () { showRevised = !showRevised; renderErros(); });
+
+    document.getElementById("fcAdd").addEventListener("click", addFlashcard);
+    document.getElementById("fcFront").addEventListener("keydown", function (e) { if (e.key === "Enter") addFlashcard(); });
+    document.getElementById("fcBack").addEventListener("keydown", function (e) { if (e.key === "Enter") addFlashcard(); });
+    document.getElementById("fcStudyStart").addEventListener("click", startFlashSession);
+    document.getElementById("fcStudyStop").addEventListener("click", stopFlashSession);
+    document.getElementById("fcCard").addEventListener("click", flipFlashcard);
+    document.getElementById("fcWrong").addEventListener("click", function () { answerFlashcard(false); });
+    document.getElementById("fcRight").addEventListener("click", function () { answerFlashcard(true); });
 
     // delegação de cliques
     document.body.addEventListener("click", function (ev) {
@@ -663,6 +1017,12 @@
       else if (t.hasAttribute("data-filter")) { errFilter = t.getAttribute("data-filter"); renderErros(); }
       else if (t.hasAttribute("data-rev")) { toggleRev(t.getAttribute("data-rev")); }
       else if (t.hasAttribute("data-rm-err")) { removeErr(t.getAttribute("data-rm-err")); }
+      else if (t.hasAttribute("data-heatdate")) { viewDate = t.getAttribute("data-heatdate"); renderEstudos(); }
+      else if (t.hasAttribute("data-fcfilter")) { fcFilter = t.getAttribute("data-fcfilter"); renderFlash(); }
+      else if (t.hasAttribute("data-fc-edit")) { startEditFlashcard(t.getAttribute("data-fc-edit")); }
+      else if (t.hasAttribute("data-fc-rm")) { removeFlashcard(t.getAttribute("data-fc-rm")); }
+      else if (t.hasAttribute("data-fc-save")) { saveEditFlashcard(t.getAttribute("data-fc-save")); }
+      else if (t.hasAttribute("data-fc-cancel")) { cancelEditFlashcard(); }
     });
 
     // input de questões (digitar direto)
@@ -738,12 +1098,21 @@
     currentTab = tab;
     document.getElementById("tabEstudos").classList.toggle("on", tab === "estudos");
     document.getElementById("tabErros").classList.toggle("on", tab === "erros");
+    document.getElementById("tabFlash").classList.toggle("on", tab === "flash");
     document.getElementById("viewEstudos").classList.toggle("hide", tab !== "estudos");
     document.getElementById("viewErros").classList.toggle("hide", tab !== "erros");
+    document.getElementById("viewFlash").classList.toggle("hide", tab !== "flash");
   }
 
   // ————— init —————
   async function init() {
+    applyTheme();
+    if (window.matchMedia) {
+      window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () {
+        var stored = getStoredTheme();
+        if (stored !== "light" && stored !== "dark") applyTheme();
+      });
+    }
     bind();
     await load();
     renderAll();

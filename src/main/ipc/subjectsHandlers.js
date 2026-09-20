@@ -1,6 +1,7 @@
 const Subject = require("../models/Subject");
 const StudyEntry = require("../models/StudyEntry");
 const MistakeEntry = require("../models/MistakeEntry");
+const Flashcard = require("../models/Flashcard");
 
 function registerSubjectsHandlers(ipcMain) {
   ipcMain.handle("subjects:list", async () => {
@@ -19,6 +20,7 @@ function registerSubjectsHandlers(ipcMain) {
     Subject.remove(name);
     StudyEntry.removeBySubject(name);
     MistakeEntry.removeBySubject(name);
+    Flashcard.removeBySubject(name);
     return { ok: true };
   });
 
@@ -30,6 +32,7 @@ function registerSubjectsHandlers(ipcMain) {
     Subject.rename(oldName, trimmed);
     StudyEntry.renameSubject(oldName, trimmed);
     MistakeEntry.renameSubject(oldName, trimmed);
+    Flashcard.renameSubject(oldName, trimmed);
     return { ok: true };
   });
 }
