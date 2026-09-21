@@ -54,4 +54,4 @@ O instalador fica em `dist/`. Depois de instalado, o app abre com duplo clique, 
 
 ## Backup
 
-Os botões "Backup" e "Restaurar" no topo do app exportam/importam um arquivo `.json` com todos os dados, via caixa de diálogo do sistema.
+Os botões "Backup" e "Restaurar" no topo do app exportam/importam um arquivo `.json` com todos os dados, via caixa de diálogo do sistema — é assim que se leva os dados pra outro computador: gera o backup, transfere o arquivo do jeito que for mais fácil (pendrive, e-mail, upload manual no Google Drive/OneDrive), e restaura no outro.
